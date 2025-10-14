@@ -127,12 +127,14 @@ function createWaterMask(image, region) {
   var ndvi = image.select('NDVI');
   
   // 使用经验阈值确定NDWI的最佳阈值
-  var ndwiThreshold = ee.Number(0.2);   // NDWI经验阈值
+  var ndwiThreshold = ee.Number(0.1);   // NDWI阈值：0.1（提取NDWI>0.1的水体区域）
+  var ndviThreshold = ee.Number(0.1);   // NDVI阈值：0.1（排除植被区域）
   
-  print('NDWI 阈值: ', ndwiThreshold);
+  print('NDWI 阈值: > ', ndwiThreshold);
+  print('NDVI 阈值: < ', ndviThreshold);
   
-  // 基于NDWI的水体识别条件
-  var waterMask = ndwi.gt(ndwiThreshold).and(ndvi.lt(0.1));  // NDWI > 阈值 且 NDVI < 0.1
+  // 基于NDWI和NDVI的水体识别条件
+  var waterMask = ndwi.gt(ndwiThreshold).and(ndvi.lt(ndviThreshold));  // NDWI > 0.1 且 NDVI < 0.1
   
   return waterMask.rename('WaterMask');
 }
