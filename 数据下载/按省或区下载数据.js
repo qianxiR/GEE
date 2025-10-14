@@ -164,22 +164,6 @@ var mainPanel = ui.Panel({
     mainPanel.add(cityResultsPanel);
     
     
-    // 添加网格大小输入框
-    mainPanel.add(ui.Label('网格大小（度）:', { fontWeight: 'bold', margin: '5px 0' }));
-    var gridSizeInput = ui.Textbox({
-      placeholder: '输入0-1之间的数值，如：0.5',
-      value: '0.5',
-      style: { width: '180px' }
-    });
-    mainPanel.add(gridSizeInput);
-    
-    // 添加说明标签
-    mainPanel.add(ui.Label('建议：0.1度(约11km) 0.25度(约28km) 0.5度(约56km) 1.0度(约111km)', { 
-      fontSize: '12px', 
-      color: 'gray',
-      margin: '2px 0 10px 0'
-    }));
-    
     // 添加下载按钮
     var downloadButton = ui.Button({
       label: '下载数据',
@@ -477,7 +461,6 @@ var mainPanel = ui.Panel({
       var endYear = endYearSelect.getValue();
       var endMonth = endMonthSelect.getValue();
       var endDate = endDateSelect.getValue();
-      var gridSize = gridSizeInput.getValue();
       
       var start = startYear + '-' + startMonth + '-' + startDate;
       var end = endYear + '-' + endMonth + '-' + endDate;
@@ -518,130 +501,52 @@ var mainPanel = ui.Panel({
         regionName = selectedProvince;
       }
       
-      // 计算网格大小对应的公里数
-      var gridSizeKm = parseFloat(gridSize) * 111;
-      
       // 打印影像信息
       print('==================== 已选择的影像信息 ====================');
       print('影像类型: ' + imageTypeName);
       print('研究区域: ' + regionName);
       print('时间范围: ' + start + ' 至 ' + end);
-      print('网格大小: ' + gridSize + '度 (约' + Math.round(gridSizeKm) + 'km)');
       print('========================================================');
     }
     
     /**
-     * 生成网格分区函数
-     * 入参:
-     * - region (ee.Geometry): 研究区域几何对象
-     * - gridSize (number): 网格大小（度），默认0.5度
-     * 方法:
-     * - 将研究区域划分为规则的矩形网格
-     * - 过滤掉与研究区域不相交的网格
-     * 出参:
-     * - ee.FeatureCollection: 包含所有有效网格的要素集合
-     */
-    function createGridPartitions(region, gridSize) {
-      gridSize = gridSize || 0.5; // 默认0.5度网格
-      
-      // 获取研究区域的边界框
-      var bounds = region.bounds();
-      
-      // 计算网格数量 - 使用GEE正确语法
-      var minLon = bounds.getInfo().coordinates[0][0][0];
-      var maxLon = bounds.getInfo().coordinates[0][2][0];
-      var minLat = bounds.getInfo().coordinates[0][0][1];
-      var maxLat = bounds.getInfo().coordinates[0][2][1];
-      
-      var lonSteps = Math.ceil((maxLon - minLon) / gridSize);
-      var latSteps = Math.ceil((maxLat - minLat) / gridSize);
-      
-      print('网格分区信息: ' + lonSteps + ' x ' + latSteps + ' = ' + (lonSteps * latSteps) + ' 个分区');
-      
-      // 生成网格
-      var grids = [];
-      for (var i = 0; i < lonSteps; i++) {
-        for (var j = 0; j < latSteps; j++) {
-          var x1 = minLon + i * gridSize;
-          var y1 = minLat + j * gridSize;
-          var x2 = x1 + gridSize;
-          var y2 = y1 + gridSize;
-          
-          var grid = ee.Geometry.Rectangle([x1, y1, x2, y2]);
-          
-          // 检查网格是否与研究区域相交
-          var intersection = grid.intersection(region, 1);
-          var hasIntersection = intersection.coordinates().size().gt(0);
-          
-          if (hasIntersection) {
-            grids.push(ee.Feature(grid, {
-              gridId: i * latSteps + j,
-              row: i,
-              col: j
-            }));
-          }
-        }
-      }
-      
-      return ee.FeatureCollection(grids);
-    }
-    
-    /**
-     * 分区导出数据函数
+     * 直接导出完整区域影像
      * 入参:
      * - image (ee.Image): 要导出的影像
      * - region (ee.Geometry): 研究区域
-     * - baseDescription (string): 基础描述名称
-     * - gridSize (number): 网格大小，默认0.5度
+     * - description (string): 导出任务描述名称
+     * - scale (number): 分辨率（米）
      * 方法:
-     * - 将大区域分割成小网格进行逐个导出
-     * - 避免内存溢出和处理超时问题
+     * - 直接导出整个研究区域的影像数据到Google Drive
+     * - 使用云优化的GeoTIFF格式
      * 出参:
      * - 无返回值，直接提交导出任务到GEE任务队列
      */
-    function exportDataByPartitions(image, region, baseDescription, gridSize) {
-      gridSize = gridSize || 0.5;
+    function exportImageData(image, region, description, scale) {
+      var exportParams = {
+        image: image,
+        description: description,
+        folder: "GEE_Exports",
+        scale: scale,
+        region: region,
+        crs: 'EPSG:4326',  // 设置坐标系为WGS84地理坐标系
+        fileFormat: "GeoTIFF",
+        formatOptions: {
+          cloudOptimized: true
+        },
+        maxPixels: 1e13 // 设置最大像素数，避免大区域导出失败
+      };
       
-      // 生成网格分区
-      var partitions = createGridPartitions(region, gridSize);
+      // 提交导出任务
+      Export.image.toDrive(exportParams);
       
-      // 获取分区数量
-      var partitionCount = partitions.size();
-      print('开始分区导出，共 ' + partitionCount.getInfo() + ' 个分区');
-      
-      // 遍历每个分区进行导出 - 使用GEE正确语法
-      var partitionList = partitions.getInfo().features;
-      
-      partitionList.forEach(function(partition, index) {
-        var gridGeometry = ee.Geometry(partition.geometry);
-        var gridId = partition.properties.gridId;
-        var row = partition.properties.row;
-        var col = partition.properties.col;
-        
-        // 裁剪影像到当前网格
-        var clippedImage = image.clip(gridGeometry);
-        
-        // 导出参数 - 使用兼容的字符串填充方法
-        var paddedGridId = ('000' + gridId).slice(-3); // 将gridId填充为3位数字
-        
-        var exportParams = {
-          image: clippedImage,
-          description: baseDescription + '_partition_' + paddedGridId + '_r' + row + 'c' + col,
-          folder: "GEE_Exports_Partitions",
-          scale: 10,
-          region: gridGeometry,
-          fileFormat: "GeoTIFF",
-          formatOptions: {
-            cloudOptimized: true
-          },
-          maxPixels: 1e8 // 限制每个分区的最大像素数为1亿
-        };
-        
-        // 提交导出任务
-        Export.image.toDrive(exportParams);
-        
-        print('已提交分区 ' + (index + 1) + '/' + partitionList.length + ' 的导出任务');
-      });
+      print('==================== 导出任务已提交 ====================');
+      print('任务名称: ' + description);
+      print('导出文件夹: GEE_Exports');
+      print('坐标系: EPSG:4326 (WGS84地理坐标系)');
+      print('分辨率: ' + scale + '米');
+      print('请在Tasks面板中点击"Run"按钮启动下载任务');
+      print('====================================================');
     }
 
     // 主要下载函数
@@ -652,16 +557,6 @@ var mainPanel = ui.Panel({
     
       // 获取影像选择
       var selectedImage = imageSelect.getValue();
-      
-      // 获取网格大小
-      var gridSizeValue = gridSizeInput.getValue();
-      var gridSize = parseFloat(gridSizeValue);
-      
-      // 验证网格大小
-      if (isNaN(gridSize) || gridSize <= 0 || gridSize > 1) {
-        loadingLabel.setValue('请输入有效的网格大小（0-1之间的数值）');
-        return;
-      }
     
       // 获取日期参数
       var startYear = startYearSelect.getValue();
@@ -721,46 +616,64 @@ var mainPanel = ui.Panel({
       var bandNames;
       var scale;
     
-      // 设置下载参数
-      switch (selectedImage) {
-        case 'COPERNICUS/S2_SR_HARMONIZED':
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12']; // 下载所有波段
-          scale = 10;
-          break;
-        case 'COPERNICUS/S2_HARMONIZED':
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12'];
-          scale = 10;
-          break;
-        case 'COPERNICUS/S2_CLOUD_PROBABILITY':
-          bandNames = ['probability'];
-          scale = 10;
-          break;
-        case 'CLOUD_SCORE_PLUS_HARMONIZED/S2_HARMONIZED_V1':
-          bandNames = ['cs_cloud_shadow', 'cs_cloud', 'cs_clear'];
-          scale = 10;
-          break;
-        case 'LANDSAT/LC08/C02/T1_TOA':
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10', 'B11'];
-          scale = 30;
-          break;
-        case 'LANDSAT/LC08/C02/T1':
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10', 'B11'];
-          scale = 30;
-          break;
-        case 'LANDSAT/LC09/C02/T1_TOA':
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B10', 'B11'];
-          scale = 30;
-          break;
-        default:
-          bandNames = ['B2', 'B3', 'B4'];
-          scale = 30;
-      }
+      // 设置下载参数 - 只导出B1-B12光谱波段
+      switch (selectedImage) {
+        case 'COPERNICUS/S2_SR_HARMONIZED':
+          // Sentinel-2 SR的B1-B12光谱波段（不包含辅助波段AOT、WVP、SCL、TCI等）
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12'];
+          scale = 10;
+          break;
+        case 'COPERNICUS/S2_HARMONIZED':
+          // Sentinel-2 TOA所有科学波段
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12'];
+          scale = 10;
+          break;
+        case 'COPERNICUS/S2_CLOUD_PROBABILITY':
+          bandNames = ['probability'];
+          scale = 10;
+          break;
+        case 'CLOUD_SCORE_PLUS_HARMONIZED/S2_HARMONIZED_V1':
+          bandNames = ['cs', 'cs_cdf'];
+          scale = 10;
+          break;
+        case 'LANDSAT/LC08/C02/T1_TOA':
+          // Landsat-8 TOA所有波段
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
+          scale = 30;
+          break;
+        case 'LANDSAT/LC08/C02/T1':
+          // Landsat-8 Raw所有波段
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
+          scale = 30;
+          break;
+        case 'LANDSAT/LC09/C02/T1_TOA':
+          // Landsat-9 TOA所有波段
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
+          scale = 30;
+          break;
+        default:
+          // 默认情况不选择波段，导出所有可用波段
+          bandNames = null; // null表示不进行波段筛选
+          scale = 30;
+      }
     
-      // 数据预处理函数
-      function preprocessImage(image) {
-        var selectedBands = image.select(bandNames);
-        return selectedBands.clip(region);
-      }
+      // 数据预处理函数
+      /**
+       * 预处理影像数据
+       * 入参:
+       * - image (ee.Image): 输入影像
+       * 方法:
+       * - 如果bandNames不为null，选择指定波段
+       * - 如果bandNames为null，保留所有波段
+       * - 裁剪到研究区域
+       * 出参:
+       * - ee.Image: 处理后的影像
+       */
+      function preprocessImage(image) {
+        // 如果bandNames为null，不进行波段选择，保留所有波段
+        var processedImage = bandNames ? image.select(bandNames) : image;
+        return processedImage.clip(region);
+      }
     
       // 数据筛选 - 添加云量过滤（仅对哨兵影像）
       var data;
@@ -819,30 +732,36 @@ var mainPanel = ui.Panel({
       }
     
     
-      // 分区下载模式（默认）
-      var baseDescription = selectedImage.replace(/\//g, '_') + '_' + selectedRegionName + '_Download';
+      // 直接导出完整区域
+      var description = selectedImage.replace(/\//g, '_') + '_' + selectedRegionName + '_' + start.replace(/-/g, '') + '_' + end.replace(/-/g, '');
       
-      // 调用分区导出函数
-      exportDataByPartitions(data, region, baseDescription, gridSize);
+      // 调用导出函数
+      exportImageData(data, region, description, scale);
+      
+      // 打印波段信息到控制台
+      print('==================== 导出影像波段信息 ====================');
+      print('影像包含的波段:', data.bandNames());
+      print('波段数量:', data.bandNames().size());
+      print('说明：导出的GeoTIFF文件包含B1-B12光谱波段（共12个），不包含辅助波段');
+      print('========================================================');
       
       // 显示结果
       loadingLabel.style().set('shown', false);
       resultsPanel.clear();
       resultsPanel.style().set('shown', true);
       
-      // 计算分区数量
-      var bounds = region.bounds().getInfo().coordinates[0];
-      var lonRange = bounds[2][0] - bounds[0][0];
-      var latRange = bounds[2][1] - bounds[0][1];
-      var partitionCount = Math.ceil(lonRange / gridSize) * Math.ceil(latRange / gridSize);
+      resultsPanel.add(ui.Label('导出任务已提交', { color: 'blue', fontWeight: 'bold' }));
+      resultsPanel.add(ui.Label('任务名称: ' + description, { color: 'black', fontSize: '12px' }));
+      resultsPanel.add(ui.Label('研究区域: ' + selectedRegionName, { color: 'gray', fontSize: '12px' }));
+      resultsPanel.add(ui.Label('分辨率: ' + scale + '米', { color: 'gray', fontSize: '12px' }));
       
-      // 计算每个分区的像素数量（km²除以分辨率²）
-      var gridSizeKm = gridSize * 111; // 1度约等于111km
-      var pixelCount = Math.round((gridSizeKm * gridSizeKm) / (scale * scale / 1000000)); // scale转换为km
+      // 异步获取波段信息并显示
+      data.bandNames().evaluate(function(bands) {
+        resultsPanel.add(ui.Label('导出波段数量: ' + bands.length, { color: 'green', fontSize: '12px' }));
+        resultsPanel.add(ui.Label('包含波段: ' + bands.join(', '), { color: 'gray', fontSize: '11px' }));
+      });
       
-      resultsPanel.add(ui.Label('分区下载任务已创建，共 ' + partitionCount + ' 个分区', { color: 'blue' }));
-      resultsPanel.add(ui.Label('网格大小：' + gridSize + '度（约' + Math.round(gridSizeKm) + 'km），每分区约' + pixelCount.toLocaleString() + '像素', { color: 'gray', fontSize: '12px' }));
-      resultsPanel.add(ui.Label('请在Tasks中查看进度，下载完成后可使用GIS软件合并分区数据', { color: 'gray', fontSize: '12px' }));
+      resultsPanel.add(ui.Label('请在Tasks面板中点击"Run"按钮启动下载任务', { color: 'red', fontSize: '12px' }));
     }
     
     /**

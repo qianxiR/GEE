@@ -1,11 +1,30 @@
+// ========== 全局配置（修改此处即可切换研究区域和时间） ==========
+/**
+ * 全局区域变量
+ * 说明：修改此变量即可切换研究区域，后续代码会自动使用此区域
+ * 
+ * 使用示例：
+ * - 行政区划：var TARGET_REGION = china_city.filter(ee.Filter.eq('name', '玉树藏族自治州'));
+ * - 行政区划：var TARGET_REGION = china_county.filter(ee.Filter.eq('name', '某县名'));
+ * - 自定义资产：var TARGET_REGION = jipocuo;
+ */
+var TARGET_REGION = china_city.filter(ee.Filter.eq('name', '玉树藏族自治州'));
+var REGION_DISPLAY_NAME = '玉树藏族自治州';  // 地图显示名称
+
+/**
+ * 全局时间配置
+ * 说明：修改这些变量即可切换查看的时间范围
+ */
+var START_DATE = '2025-06-01';  // 开始日期，格式：YYYY-MM-DD
+var END_DATE = '2025-07-31';    // 结束日期，格式：YYYY-MM-DD
+// ====================================================================
+
 // 1. 定义研究区域
-var chengdu = china_city.filter(ee.Filter.eq('name', '玉树藏族自治州'));
+Map.addLayer(TARGET_REGION.style({fillColor:'00000000',color:'ffff00'}), {}, REGION_DISPLAY_NAME);
 
-Map.addLayer(chengdu.style({fillColor:'00000000',color:'ffff00'}), {}, '玉树藏族自治州');
+Map.centerObject(TARGET_REGION, 10);
 
-Map.centerObject(chengdu, 10);
-
-var new_clip_region = chengdu;
+var new_clip_region = TARGET_REGION;
 
 // 2. 去云算法函数
 /**
@@ -49,18 +68,22 @@ function rmcloudS2(image){
   return image.updateMask(cloudMask);
 }
 
-// 3. 获取 Sentinel-2 数据
-var startDate_2025 = '2025-06-01';
-var endDate_2025 = '2025-07-31';
-
-// 获取 Sentinel-2 数据，应用去云算法
+// 3. 获取 Sentinel-2 数据（使用全局配置的时间范围）
+/**
+ * 获取哨兵-2 SR数据并去云
+ * 说明：median()会保留所有波段，然后通过select()只选择B1-B12光谱波段
+ * - 光谱波段：B1, B2, B3, B4, B5, B6, B7, B8, B8A, B9, B11, B12（除B10，SR产品中不存在）
+ * - 不包含辅助波段：AOT（气溶胶光学厚度）, WVP（水汽）, SCL（场景分类）, TCI等
+ */
 var S2_2025 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
   .filterBounds(new_clip_region)
-  .filterDate(startDate_2025, endDate_2025)
+  .filterDate(START_DATE, END_DATE)
   .map(rmcloudS2);
 
-// 4. 计算影像中值合成，保留原始数据
-var composite_2025 = S2_2025.median().clip(chengdu);
+// 4. 计算影像中值合成，只保留B1-B12光谱波段
+var composite_2025 = S2_2025.median()
+  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12'])
+  .clip(TARGET_REGION);
 
 // 5. 可视化合成影像
 Map.addLayer(composite_2025, {min: 0, max: 3000, bands: ['B4', 'B3', 'B2']}, 'Sentinel-2 Composite 2025');

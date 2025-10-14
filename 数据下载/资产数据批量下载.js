@@ -1,67 +1,80 @@
-    // 批量哨兵影像下载脚本
-    // 一次性下载所有研究区域的哨兵影像数据
+// ========== 批量哨兵影像下载脚本 ==========
+/**
+ * 批量下载多个研究区域的哨兵影像数据
+ * 
+ * 说明：
+ * - 本脚本用于批量下载多个区域
+ * - 如果只需下载单个区域，请使用"资产数据单个下载.js"
+ * - 修改区域列表请在下方的 regionConfigs 数组中添加/删除
+ */
+// ===========================================
 
-    // ========== 1. 定义所有研究区域 ==========
-    var china_county = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/china_county"),
-        china_city = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/china_city"),
-        baimahai = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/baimahai"),
-        duona = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/duona_zongquanhu_cuorinanhu"),
-        jipocuo = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/jipocuo"),
-        shaiyincuo = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/shaiyincuo"),
-        amucuo = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/amucuo");
+// ========== 1. 定义所有研究区域资产 ==========
+var china_county = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/china_county"),
+    china_city = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/china_city"),
+    baimahai = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/baimahai"),
+    duona = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/duona_zongquanhu_cuorinanhu"),
+    jipocuo = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/jipocuo"),
+    shaiyincuo = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/shaiyincuo"),
+    amucuo = ee.FeatureCollection("projects/applied-pipe-453411-k9/assets/shuishen/amucuo");
 
-    // ========== 2. 区域配置对象 ==========
-    var regionConfigs = [
-    {
-        name: 'china_county',
-        collection: china_county,
-        description: '中国县级行政区划'
-    },
-    {
-        name: 'china_city', 
-        collection: china_city,
-        description: '中国市级行政区划'
-    },
-    {
-        name: 'baimahai',
-        collection: baimahai,
-        description: '白马海区域'
-    },
-    {
-        name: 'duona',
-        collection: duona,
-        description: '多纳宗泉湖措日南湖区域'
-    },
-    {
-        name: 'jipocuo',
-        collection: jipocuo,
-        description: '吉普错区域'
-    },
-    {
-        name: 'shaiyincuo',
-        collection: shaiyincuo,
-        description: '晒银错区域'
-    },
-    {
-        name: 'amucuo',
-        collection: amucuo,
-        description: '阿木错区域'
-    }
-    ];
-
-// ========== 3. 下载参数配置 ==========
+// ========== 2. 全局下载参数配置（修改此处即可切换下载时间） ==========
+/**
+ * 下载参数配置
+ * 说明：修改这些参数即可切换下载的时间范围和参数
+ * 导出文件名会自动从这些配置生成
+ */
 var downloadParams = {
-startDate: '2025-06-01',
-endDate: '2025-07-31',
-cloudFilter: 20, // 云量过滤阈值（百分比）
-gridSize: 0.5,   // 网格大小（度）
-scale: 10,       // 分辨率（米）
-maxPixels: 1e8   // 每个分区的最大像素数
+  startDate: '2025-06-01',  // 开始日期，格式：YYYY-MM-DD
+  endDate: '2025-07-31',    // 结束日期，格式：YYYY-MM-DD
+  cloudFilter: 20,          // 云量过滤阈值（百分比）
+  scale: 10,                // 分辨率（米）
+  maxPixels: 1e13           // 最大像素数
 };
+// =========================================================================
+
+// ========== 3. 区域配置对象 ==========
+var regionConfigs = [
+  {
+    name: 'china_county',
+    collection: china_county,
+    description: '中国县级行政区划'
+  },
+  {
+    name: 'china_city', 
+    collection: china_city,
+    description: '中国市级行政区划'
+  },
+  {
+    name: 'baimahai',
+    collection: baimahai,
+    description: '白马海区域'
+  },
+  {
+    name: 'duona',
+    collection: duona,
+    description: '多纳宗泉湖措日南湖区域'
+  },
+  {
+    name: 'jipocuo',
+    collection: jipocuo,
+    description: '吉普错区域'
+  },
+  {
+    name: 'shaiyincuo',
+    collection: shaiyincuo,
+    description: '晒银错区域'
+  },
+  {
+    name: 'amucuo',
+    collection: amucuo,
+    description: '阿木错区域'
+  }
+];
 
 // ========== 4. 哨兵-2影像获取函数 ==========
 /**
- * 获取哨兵-2影像数据
+ * 获取哨兵-2影像数据（只保留B1-B12光谱波段）
  * 入参:
  * - region (ee.FeatureCollection): 研究区域要素集合
  * - startDate (string): 开始日期，格式'YYYY-MM-DD'
@@ -70,9 +83,10 @@ maxPixels: 1e8   // 每个分区的最大像素数
  * 方法:
  * - 筛选指定时间范围内的哨兵-2影像
  * - 应用云量过滤和空间过滤
- * - 计算中值合成影像
+ * - 计算中值合成影像，只保留B1-B12光谱波段
+ * - 不包含辅助波段（AOT, WVP, SCL, TCI等）
  * 出参:
- * - ee.Image: 合成后的哨兵-2影像
+ * - ee.Image: 合成后的哨兵-2影像，包含B1-B12光谱波段（共12个）
  */
 function getSentinel2Data(region, startDate, endDate, cloudFilter) {
   var s2Collection = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
@@ -84,8 +98,10 @@ function getSentinel2Data(region, startDate, endDate, cloudFilter) {
   var count = s2Collection.size();
   print('哨兵影像数量: ' + count.getInfo());
   
-  // 计算中值合成
-  var composite = s2Collection.median().clip(region);
+  // 计算中值合成（只选择B1-B12光谱波段）
+  var composite = s2Collection.median()
+    .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12'])
+    .clip(region);
   
   return composite;
 }
@@ -134,119 +150,49 @@ function checkDataAvailability(region, startDate, endDate, cloudFilter) {
   }
 }
 
-    // ========== 5. 网格分区生成函数 ==========
-    /**
-     * 生成网格分区
-     * 入参:
-     * - region (ee.Geometry): 研究区域几何对象
-     * - gridSize (number): 网格大小（度）
-     * 方法:
-     * - 将研究区域划分为规则的矩形网格
-     * - 过滤掉与研究区域不相交的网格
-     * 出参:
-     * - ee.FeatureCollection: 包含所有有效网格的要素集合
-     */
-    function createGridPartitions(region, gridSize) {
-    // 获取研究区域的边界框
-    var bounds = region.bounds();
-    
-    // 计算网格数量
-    var minLon = bounds.getInfo().coordinates[0][0][0];
-    var maxLon = bounds.getInfo().coordinates[0][2][0];
-    var minLat = bounds.getInfo().coordinates[0][0][1];
-    var maxLat = bounds.getInfo().coordinates[0][2][1];
-    
-    var lonSteps = Math.ceil((maxLon - minLon) / gridSize);
-    var latSteps = Math.ceil((maxLat - minLat) / gridSize);
-    
-    print('网格分区信息: ' + lonSteps + ' x ' + latSteps + ' = ' + (lonSteps * latSteps) + ' 个分区');
-    
-    // 生成网格
-    var grids = [];
-    for (var i = 0; i < lonSteps; i++) {
-        for (var j = 0; j < latSteps; j++) {
-        var x1 = minLon + i * gridSize;
-        var y1 = minLat + j * gridSize;
-        var x2 = x1 + gridSize;
-        var y2 = y1 + gridSize;
-        
-        var grid = ee.Geometry.Rectangle([x1, y1, x2, y2]);
-        
-        // 检查网格是否与研究区域相交
-        var intersection = grid.intersection(region, 1);
-        var hasIntersection = intersection.coordinates().size().gt(0);
-        
-        if (hasIntersection) {
-            grids.push(ee.Feature(grid, {
-            gridId: i * latSteps + j,
-            row: i,
-            col: j
-            }));
-        }
-        }
-    }
-    
-    return ee.FeatureCollection(grids);
-    }
+// ========== 5. 直接导出函数 ==========
+/**
+ * 直接导出完整区域影像数据
+ * 入参:
+ * - image (ee.Image): 要导出的影像
+ * - region (ee.Geometry): 研究区域
+ * - description (string): 导出任务描述名称
+ * 方法:
+ * - 直接导出整个研究区域的影像数据到Google Drive
+ * - 使用云优化的GeoTIFF格式
+ * 出参:
+ * - 无返回值，直接提交导出任务到GEE任务队列
+ */
+function exportImageData(image, region, description) {
+  var exportParams = {
+    image: image,
+    description: description,
+    folder: "GEE_Batch_Exports",
+    scale: downloadParams.scale,
+    region: region,
+    crs: 'EPSG:4326',  // 设置坐标系为WGS84地理坐标系
+    fileFormat: "GeoTIFF",
+    formatOptions: {
+      cloudOptimized: true
+    },
+    maxPixels: downloadParams.maxPixels
+  };
+  
+  // 提交导出任务
+  Export.image.toDrive(exportParams);
+  
+  print('==================== 导出任务已提交 ====================');
+  print('任务名称: ' + description);
+  print('导出文件夹: GEE_Batch_Exports');
+  print('坐标系: EPSG:4326 (WGS84地理坐标系)');
+  print('分辨率: ' + downloadParams.scale + '米');
+  print('导出波段数量: ' + image.bandNames().size().getInfo());
+  print('导出波段列表: ' + image.bandNames().getInfo().join(', '));
+  print('说明：GeoTIFF包含B1-B12光谱波段（共12个），不包含辅助波段');
+  print('====================================================');
+}
 
-    // ========== 6. 分区导出函数 ==========
-    /**
-     * 分区导出数据
-     * 入参:
-     * - image (ee.Image): 要导出的影像
-     * - region (ee.Geometry): 研究区域
-     * - baseDescription (string): 基础描述名称
-     * - gridSize (number): 网格大小
-     * 方法:
-     * - 将大区域分割成小网格进行逐个导出
-     * - 避免内存溢出和处理超时问题
-     * 出参:
-     * - 无返回值，直接提交导出任务到GEE任务队列
-     */
-    function exportDataByPartitions(image, region, baseDescription, gridSize) {
-    // 生成网格分区
-    var partitions = createGridPartitions(region, gridSize);
-    
-    // 获取分区数量
-    var partitionCount = partitions.size();
-    print('开始分区导出，共 ' + partitionCount.getInfo() + ' 个分区');
-    
-    // 遍历每个分区进行导出
-    var partitionList = partitions.getInfo().features;
-    
-    partitionList.forEach(function(partition, index) {
-        var gridGeometry = ee.Geometry(partition.geometry);
-        var gridId = partition.properties.gridId;
-        var row = partition.properties.row;
-        var col = partition.properties.col;
-        
-        // 裁剪影像到当前网格
-        var clippedImage = image.clip(gridGeometry);
-        
-        // 导出参数
-        var paddedGridId = ('000' + gridId).slice(-3);
-        
-        var exportParams = {
-        image: clippedImage,
-        description: baseDescription + '_partition_' + paddedGridId + '_r' + row + 'c' + col,
-        folder: "GEE_Batch_Exports",
-        scale: downloadParams.scale,
-        region: gridGeometry,
-        fileFormat: "GeoTIFF",
-        formatOptions: {
-            cloudOptimized: true
-        },
-        maxPixels: downloadParams.maxPixels
-        };
-        
-        // 提交导出任务
-        Export.image.toDrive(exportParams);
-        
-        print('已提交分区 ' + (index + 1) + '/' + partitionList.length + ' 的导出任务');
-    });
-    }
-
-// ========== 7. 单个区域处理函数 ==========
+// ========== 6. 单个区域处理函数 ==========
 /**
  * 处理单个区域的哨兵影像下载
  * 入参:
@@ -255,7 +201,7 @@ function checkDataAvailability(region, startDate, endDate, cloudFilter) {
  * - 获取区域几何对象
  * - 检查数据可用性
  * - 下载哨兵-2影像数据
- * - 执行分区导出
+ * - 直接导出完整区域
  * 出参:
  * - 无返回值，直接提交下载任务
  */
@@ -292,17 +238,12 @@ function processSingleRegion(regionConfig) {
     );
     
     // 生成导出描述名称
-    var baseDescription = regionConfig.name + '_Sentinel2_' + 
-                        downloadParams.startDate.replace(/-/g, '') + '_' + 
-                        downloadParams.endDate.replace(/-/g, '');
+    var description = regionConfig.name + '_Sentinel2_' + 
+                      downloadParams.startDate.replace(/-/g, '') + '_' + 
+                      downloadParams.endDate.replace(/-/g, '');
     
-    // 执行分区导出
-    exportDataByPartitions(
-      s2Image,
-      regionGeometry,
-      baseDescription,
-      downloadParams.gridSize
-    );
+    // 直接导出完整区域
+    exportImageData(s2Image, regionGeometry, description);
     
     print('区域 ' + regionConfig.name + ' 的下载任务已提交完成');
     
@@ -380,7 +321,7 @@ function autoDownloadNonChinaRegions() {
  * 方法:
  * - 获取区域几何对象
  * - 下载哨兵-2影像数据
- * - 逐个提交分区导出任务
+ * - 直接导出完整区域
  * 出参:
  * - 无返回值，直接提交下载任务
  */
@@ -412,88 +353,19 @@ function processSingleRegionSequentially(regionConfig) {
     );
     
     // 生成导出描述名称
-    var baseDescription = regionConfig.name + '_Sentinel2_' + 
-                        downloadParams.startDate.replace(/-/g, '') + '_' + 
-                        downloadParams.endDate.replace(/-/g, '');
+    var description = regionConfig.name + '_Sentinel2_' + 
+                      downloadParams.startDate.replace(/-/g, '') + '_' + 
+                      downloadParams.endDate.replace(/-/g, '');
     
-    // 逐个提交分区导出任务
-    exportDataByPartitionsSequentially(
-      s2Image,
-      regionGeometry,
-      baseDescription,
-      downloadParams.gridSize
-    );
+    // 直接导出完整区域
+    exportImageData(s2Image, regionGeometry, description);
     
   } catch (error) {
     print('处理区域 ' + regionConfig.name + ' 时发生错误: ' + error);
   }
 }
 
-/**
- * 逐个提交分区导出任务
- * 入参:
- * - image (ee.Image): 要导出的影像
- * - region (ee.Geometry): 研究区域
- * - baseDescription (string): 基础描述名称
- * - gridSize (number): 网格大小
- * 方法:
- * - 将大区域分割成小网格
- * - 逐个提交每个分区的导出任务
- * - 确保任务按顺序提交
- * 出参:
- * - 无返回值，直接提交导出任务到GEE任务队列
- */
-function exportDataByPartitionsSequentially(image, region, baseDescription, gridSize) {
-  // 生成网格分区
-  var partitions = createGridPartitions(region, gridSize);
-  
-  // 获取分区数量
-  var partitionCount = partitions.size();
-  print('开始逐个提交分区导出，共 ' + partitionCount.getInfo() + ' 个分区');
-  
-  // 获取分区列表
-  var partitionList = partitions.getInfo().features;
-  
-  // 逐个提交分区任务（使用for循环确保顺序）
-  for (var i = 0; i < partitionList.length; i++) {
-    var partition = partitionList[i];
-    var gridGeometry = ee.Geometry(partition.geometry);
-    var gridId = partition.properties.gridId;
-    var row = partition.properties.row;
-    var col = partition.properties.col;
-    
-    // 裁剪影像到当前网格
-    var clippedImage = image.clip(gridGeometry);
-    
-    // 导出参数
-    var paddedGridId = ('000' + gridId).slice(-3);
-    
-    var exportParams = {
-      image: clippedImage,
-      description: baseDescription + '_partition_' + paddedGridId + '_r' + row + 'c' + col,
-      folder: "GEE_Batch_Exports",
-      scale: downloadParams.scale,
-      region: gridGeometry,
-      fileFormat: "GeoTIFF",
-      formatOptions: {
-        cloudOptimized: true
-      },
-      maxPixels: downloadParams.maxPixels
-    };
-    
-    // 逐个提交导出任务
-    Export.image.toDrive(exportParams);
-    
-    print('已提交分区 ' + (i + 1) + '/' + partitionList.length + ' 的导出任务');
-    
-    // 添加短暂延迟，确保任务逐个提交
-    if (i < partitionList.length - 1) {
-      print('等待1秒后提交下一个分区...');
-    }
-  }
-}
-
-// ========== 8. 逐个区域下载函数 ==========
+// ========== 7. 逐个区域下载函数 ==========
 /**
  * 下载指定区域的哨兵影像
  * 入参:
@@ -516,7 +388,6 @@ function downloadSingleRegion(regionIndex) {
   print('下载参数:');
   print('- 时间范围: ' + downloadParams.startDate + ' 至 ' + downloadParams.endDate);
   print('- 云量过滤: < ' + downloadParams.cloudFilter + '%');
-  print('- 网格大小: ' + downloadParams.gridSize + '度');
   print('- 分辨率: ' + downloadParams.scale + '米');
   print('============================================================');
   
@@ -558,7 +429,6 @@ function batchDownloadAllRegions() {
   print('下载参数:');
   print('- 时间范围: ' + downloadParams.startDate + ' 至 ' + downloadParams.endDate);
   print('- 云量过滤: < ' + downloadParams.cloudFilter + '%');
-  print('- 网格大小: ' + downloadParams.gridSize + '度');
   print('- 分辨率: ' + downloadParams.scale + '米');
   print('============================================================');
   
@@ -575,17 +445,16 @@ function batchDownloadAllRegions() {
   
   print('==================== 所有区域下载任务已提交 ====================');
   print('请在GEE的Tasks面板中查看所有下载任务的进度');
-  print('建议：下载完成后可以使用GIS软件（如QGIS）将分区数据合并为完整影像');
 }
 
-// ========== 9. 初始化显示 ==========
+// ========== 8. 初始化显示 ==========
 // 显示可用区域列表
 showAvailableRegions();
 
 // 自动检查并下载非china区域
 autoDownloadNonChinaRegions();
 
-// ========== 10. 地图显示（可选） ==========
+// ========== 9. 地图显示（可选） ==========
 // 显示所有区域在地图上
 Map.setCenter(100, 35, 4); // 设置地图中心为中国中部
 

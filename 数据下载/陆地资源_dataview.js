@@ -1,11 +1,30 @@
+// ========== 全局配置（修改此处即可切换研究区域和时间） ==========
+/**
+ * 全局区域变量
+ * 说明：修改此变量即可切换研究区域，后续代码会自动使用此区域
+ * 
+ * 使用示例：
+ * - 行政区划：var TARGET_REGION = china_city.filter(ee.Filter.eq('name', '玉树藏族自治州'));
+ * - 行政区划：var TARGET_REGION = china_county.filter(ee.Filter.eq('name', '某县名'));
+ * - 自定义资产：var TARGET_REGION = jipocuo;
+ */
+var TARGET_REGION = china_city.filter(ee.Filter.eq('name', '玉树藏族自治州'));
+var REGION_DISPLAY_NAME = '玉树藏族自治州';  // 地图显示名称
+
+/**
+ * 全局时间配置
+ * 说明：修改这些变量即可切换查看的时间范围
+ */
+var START_DATE = '2025-06-01';  // 开始日期，格式：YYYY-MM-DD
+var END_DATE = '2025-07-31';    // 结束日期，格式：YYYY-MM-DD
+// ====================================================================
+
 // 1. 定义研究区域
-var chengdu = china_city.filter(ee.Filter.eq('name', '玉树藏族自治州'));
+Map.addLayer(TARGET_REGION.style({fillColor:'00000000',color:'ffff00'}), {}, REGION_DISPLAY_NAME);
 
-Map.addLayer(chengdu.style({fillColor:'00000000',color:'ffff00'}), {}, '玉树藏族自治州');
+Map.centerObject(TARGET_REGION, 10);
 
-Map.centerObject(chengdu, 10);
-
-var new_clip_region = chengdu;
+var new_clip_region = TARGET_REGION;
 
 // 2. 去云算法函数
 /**
@@ -53,39 +72,43 @@ var L8 = ee.ImageCollection("LANDSAT/LC08/C02/T1_TOA");
 var L7 = ee.ImageCollection("LANDSAT/LE07/C02/T1_TOA");
 var L5 = ee.ImageCollection("LANDSAT/LT05/C02/T1_TOA");
 
-// 4. 获取Landsat数据
-var startDate_2025 = '2025-06-01';
-var endDate_2025 = '2025-07-31';
-
+// 4. 获取Landsat数据（使用全局配置的时间范围）
 // 获取Landsat-9数据，应用去云算法
 var L9_2025 = L9.filterBounds(new_clip_region)
-  .filterDate(startDate_2025, endDate_2025)
+  .filterDate(START_DATE, END_DATE)
   .filter(ee.Filter.lt('CLOUD_COVER', 20))
   .map(rmL5789Cloud);
 
 // 获取Landsat-8数据，应用去云算法
 var L8_2025 = L8.filterBounds(new_clip_region)
-  .filterDate(startDate_2025, endDate_2025)
+  .filterDate(START_DATE, END_DATE)
   .filter(ee.Filter.lt('CLOUD_COVER', 20))
   .map(rmL5789Cloud);
 
 // 获取Landsat-7数据，应用去云算法
 var L7_2025 = L7.filterBounds(new_clip_region)
-  .filterDate(startDate_2025, endDate_2025)
+  .filterDate(START_DATE, END_DATE)
   .filter(ee.Filter.lt('CLOUD_COVER', 20))
   .map(rmL5789Cloud);
 
 // 获取Landsat-5数据，应用去云算法
 var L5_2025 = L5.filterBounds(new_clip_region)
-  .filterDate(startDate_2025, endDate_2025)
+  .filterDate(START_DATE, END_DATE)
   .filter(ee.Filter.lt('CLOUD_COVER', 20))
   .map(rmL5789Cloud);
 
-// 5. 计算影像中值合成
-var L9_composite = L9_2025.median().clip(chengdu);
-var L8_composite = L8_2025.median().clip(chengdu);
-var L7_composite = L7_2025.median().clip(chengdu);
-var L5_composite = L5_2025.median().clip(chengdu);
+// 5. 计算影像中值合成（保留所有波段）
+/**
+ * Landsat中值合成说明：
+ * - Landsat 8/9 TOA包含波段：B1-B11（包括热红外B10和B11）
+ * - Landsat 5/7 TOA包含波段：B1-B7（不含B8的全色波段）
+ * - median()会保留所有可用波段，不仅仅是RGB
+ * - 可用于多种指数计算：NDVI, NDWI, SAVI等
+ */
+var L9_composite = L9_2025.median().clip(TARGET_REGION);
+var L8_composite = L8_2025.median().clip(TARGET_REGION);
+var L7_composite = L7_2025.median().clip(TARGET_REGION);
+var L5_composite = L5_2025.median().clip(TARGET_REGION);
 
 // 6. 可视化参数
 var trueColor432Vis_L8 = {
