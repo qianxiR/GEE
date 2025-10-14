@@ -754,13 +754,13 @@ var mainPanel = ui.Panel({
           scale = 10;
           break;
         case 'LANDSAT/LT05/C02/T1_TOA':
-          // Landsat-5 TOA波段（B1-B7，不含热红外B6）
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B7'];
+          // Landsat-5 TOA光谱波段（B1-B7，包括热红外B6）
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'];
           scale = 30;
           break;
         case 'LANDSAT/LE07/C02/T1_TOA':
-          // Landsat-7 TOA波段（B1-B7，不含全色B8）
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B7'];
+          // Landsat-7 TOA光谱波段（B1-B7，包括热红外B6，不含全色B8）
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'];
           scale = 30;
           break;
         case 'LANDSAT/LC08/C02/T1_TOA':

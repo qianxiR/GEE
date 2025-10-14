@@ -97,18 +97,26 @@ var L5_2025 = L5.filterBounds(new_clip_region)
   .filter(ee.Filter.lt('CLOUD_COVER', 20))
   .map(rmL5789Cloud);
 
-// 5. 计算影像中值合成（保留所有波段）
+// 5. 计算影像中值合成（只保留光谱波段，排除辅助波段）
 /**
  * Landsat中值合成说明：
- * - Landsat 8/9 TOA包含波段：B1-B11（包括热红外B10和B11）
- * - Landsat 5/7 TOA包含波段：B1-B7（不含B8的全色波段）
- * - median()会保留所有可用波段，不仅仅是RGB
+ * - Landsat 8/9 TOA包含光谱波段：B1-B11（包括热红外B10和B11）
+ * - Landsat 5/7 TOA包含光谱波段：B1-B7（不含B8的全色波段）
+ * - 只选择光谱波段，排除QA_PIXEL、QA_RADSAT等辅助波段
  * - 可用于多种指数计算：NDVI, NDWI, SAVI等
  */
-var L9_composite = L9_2025.median().clip(TARGET_REGION);
-var L8_composite = L8_2025.median().clip(TARGET_REGION);
-var L7_composite = L7_2025.median().clip(TARGET_REGION);
-var L5_composite = L5_2025.median().clip(TARGET_REGION);
+var L9_composite = L9_2025.median()
+  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'])
+  .clip(TARGET_REGION);
+var L8_composite = L8_2025.median()
+  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'])
+  .clip(TARGET_REGION);
+var L7_composite = L7_2025.median()
+  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
+  .clip(TARGET_REGION);
+var L5_composite = L5_2025.median()
+  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
+  .clip(TARGET_REGION);
 
 // 6. 可视化参数
 var trueColor432Vis_L8 = {
