@@ -27,17 +27,17 @@ var mainPanel = ui.Panel({
     // 添加影像选择器
     mainPanel.add(ui.Label('选择影像:', { fontWeight: 'bold', margin: '5px 0' }));
     var imageSelect = ui.Select({
-      items: [
-        'COPERNICUS/S2_SR_HARMONIZED', // Sentinel-2 MSI Level-2A (SR)
-        'COPERNICUS/S2_HARMONIZED', // Sentinel-2 MSI Level-1C (TOA)
-        'COPERNICUS/S2_CLOUD_PROBABILITY', // Sentinel-2 Cloud Probability
-        'CLOUD_SCORE_PLUS_HARMONIZED/S2_HARMONIZED_V1', // Cloud Score + S2_HARMONIZED V1
-        'LANDSAT/LC08/C02/T1_TOA', // Landsat-8 Collection 2 Tier 1 TOA Reflectance
-        'LANDSAT/LC08/C02/T1', // Landsat-8 Collection 2 Tier 1 and Real-Time data Raw Scenes
-        'LANDSAT/LC09/C02/T1_TOA' // Landsat-9 Collection 2 Tier 1 TOA Reflectance
-      ],
-      placeholder: '选择影像',
-      value: 'COPERNICUS/S2_SR_HARMONIZED'
+      items: [
+        'COPERNICUS/S2_SR_HARMONIZED', // Sentinel-2 MSI Level-2A (SR)
+        'COPERNICUS/S2_HARMONIZED', // Sentinel-2 MSI Level-1C (TOA)
+        'CLOUD_SCORE_PLUS_HARMONIZED/S2_HARMONIZED_V1', // Cloud Score + S2_HARMONIZED V1
+        'LANDSAT/LT05/C02/T1_TOA', // Landsat-5 Collection 2 Tier 1 TOA Reflectance
+        'LANDSAT/LE07/C02/T1_TOA', // Landsat-7 Collection 2 Tier 1 TOA Reflectance
+        'LANDSAT/LC08/C02/T1_TOA', // Landsat-8 Collection 2 Tier 1 TOA Reflectance
+        'LANDSAT/LC08/C02/T1' // Landsat-8 Collection 2 Tier 1 and Real-Time data Raw Scenes
+      ],
+      placeholder: '选择影像',
+      value: 'COPERNICUS/S2_SR_HARMONIZED'
     });
     mainPanel.add(imageSelect);
     
@@ -398,11 +398,15 @@ var mainPanel = ui.Panel({
      * 方法:
      * - 使用全局变量获取当前选择的值
      * - 优先显示城市，其次省份
+     * - 加载并显示该区域的真实遥感影像
+     * - 叠加显示区域边界
      * - 如果都没有选择则显示提示信息
      * 出参: 无
      */
     function updateMap() {
+      // 清空地图图层
       map.clear();
+      
       var region;
       var layerName;
       var zoomLevel = 6;
@@ -436,8 +440,124 @@ var mainPanel = ui.Panel({
       }
     
       if (region) {
+        // 显示加载提示
+        loadingLabel.setValue('正在加载区域影像，请稍候...');
+        loadingLabel.style().set('shown', true);
+        
+        // 居中显示区域
         map.centerObject(region, zoomLevel);
-        map.addLayer(region, { color: 'red' }, layerName);
+        
+        // ========== 加载并显示该区域的真实影像 ==========
+        // 获取当前选择的影像类型和时间范围
+        var selectedImage = imageSelect.getValue();
+        var startYear = startYearSelect.getValue();
+        var startMonth = startMonthSelect.getValue();
+        var startDate = startDateSelect.getValue();
+        var endYear = endYearSelect.getValue();
+        var endMonth = endMonthSelect.getValue();
+        var endDate = endDateSelect.getValue();
+        
+        var start = startYear + '-' + startMonth + '-' + startDate;
+        var end = endYear + '-' + endMonth + '-' + endDate;
+        
+        // 加载影像集合
+        var imageCollection = ee.ImageCollection(selectedImage);
+        var imageType = String(selectedImage);
+        
+        // 根据影像类型设置显示波段
+        var displayBands;
+        var visParams;
+        
+        if (imageType.indexOf('COPERNICUS/S2_SR_HARMONIZED') !== -1) {
+          // Sentinel-2 SR使用RGB波段显示，地表反射率范围0-3000
+          displayBands = ['B4', 'B3', 'B2']; // 红、绿、蓝波段
+          visParams = {
+            min: 0,
+            max: 3000,
+            bands: displayBands
+          };
+        } else if (imageType.indexOf('COPERNICUS/S2_HARMONIZED') !== -1) {
+          // Sentinel-2 TOA使用RGB波段显示
+          displayBands = ['B4', 'B3', 'B2'];
+          visParams = {
+            min: 0,
+            max: 3000,
+            bands: displayBands
+          };
+        } else if (imageType.indexOf('CLOUD_SCORE_PLUS') !== -1) {
+          // Cloud Score使用灰度显示
+          displayBands = ['cs'];
+          visParams = {
+            min: 0,
+            max: 1,
+            palette: ['white', 'gray', 'black']
+          };
+        } else if (imageType.indexOf('LANDSAT/LT05') !== -1 || imageType.indexOf('LANDSAT/LE07') !== -1) {
+          // Landsat-5和Landsat-7使用B3、B2、B1作为RGB波段
+          displayBands = ['B3', 'B2', 'B1'];
+          visParams = {
+            min: 0,
+            max: 0.4,
+            bands: displayBands
+          };
+        } else if (imageType.indexOf('LANDSAT/LC08') !== -1) {
+          // Landsat-8使用B4、B3、B2作为RGB波段
+          displayBands = ['B4', 'B3', 'B2'];
+          visParams = {
+            min: 0,
+            max: 0.4,
+            bands: displayBands
+          };
+        } else {
+          // 默认使用前三个波段
+          displayBands = null;
+          visParams = {
+            min: 0,
+            max: 3000
+          };
+        }
+        
+        // 数据筛选和预处理
+        var imageData;
+        if (imageType.indexOf('COPERNICUS/S2') !== -1) {
+          // 哨兵影像添加云量过滤（<20%云量，使用CLOUDY_PIXEL_PERCENTAGE属性）
+          imageData = imageCollection
+            .filterDate(start, end)
+            .filterBounds(region)
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+            .median() // 使用中值合成减少云影响
+            .clip(region); // 裁剪到研究区域
+        } else if (imageType.indexOf('LANDSAT') !== -1) {
+          // Landsat影像添加云量过滤（<20%云量，使用CLOUD_COVER属性）
+          imageData = imageCollection
+            .filterDate(start, end)
+            .filterBounds(region)
+            .filter(ee.Filter.lt('CLOUD_COVER', 20))
+            .median()
+            .clip(region);
+        } else {
+          // 其他影像类型不进行云量过滤
+          imageData = imageCollection
+            .filterDate(start, end)
+            .filterBounds(region)
+            .median()
+            .clip(region);
+        }
+        
+        // 在地图上显示影像（作为底图）
+        map.addLayer(imageData, visParams, layerName + ' 影像');
+        
+        // 叠加显示区域边界（只显示红色边框线条，不填充面）
+        // 使用paint方法创建只有边界的图层
+        var outline = ee.Image().byte().paint({
+          featureCollection: ee.FeatureCollection([ee.Feature(region)]),
+          color: 1,
+          width: 2
+        });
+        map.addLayer(outline, {palette: 'red'}, layerName + ' 边界');
+        
+        // 隐藏加载提示
+        loadingLabel.style().set('shown', false);
         
         // 打印已选择的影像信息
         printSelectedImageInfo();
@@ -474,20 +594,20 @@ var mainPanel = ui.Panel({
         case 'COPERNICUS/S2_HARMONIZED':
           imageTypeName = 'Sentinel-2 大气层顶反射率 (TOA)';
           break;
-        case 'COPERNICUS/S2_CLOUD_PROBABILITY':
-          imageTypeName = 'Sentinel-2 云概率';
-          break;
         case 'CLOUD_SCORE_PLUS_HARMONIZED/S2_HARMONIZED_V1':
           imageTypeName = 'Cloud Score + Sentinel-2';
+          break;
+        case 'LANDSAT/LT05/C02/T1_TOA':
+          imageTypeName = 'Landsat-5 大气层顶反射率 (TOA)';
+          break;
+        case 'LANDSAT/LE07/C02/T1_TOA':
+          imageTypeName = 'Landsat-7 大气层顶反射率 (TOA)';
           break;
         case 'LANDSAT/LC08/C02/T1_TOA':
           imageTypeName = 'Landsat-8 大气层顶反射率 (TOA)';
           break;
         case 'LANDSAT/LC08/C02/T1':
-          imageTypeName = 'Landsat-8 地表反射率 (SR)';
-          break;
-        case 'LANDSAT/LC09/C02/T1_TOA':
-          imageTypeName = 'Landsat-9 大气层顶反射率 (TOA)';
+          imageTypeName = 'Landsat-8 原始数据 (Raw)';
           break;
         default:
           imageTypeName = selectedImage;
@@ -616,7 +736,7 @@ var mainPanel = ui.Panel({
       var bandNames;
       var scale;
     
-      // 设置下载参数 - 只导出B1-B12光谱波段
+      // 设置下载参数 - 导出光谱波段
       switch (selectedImage) {
         case 'COPERNICUS/S2_SR_HARMONIZED':
           // Sentinel-2 SR的B1-B12光谱波段（不包含辅助波段AOT、WVP、SCL、TCI等）
@@ -628,26 +748,28 @@ var mainPanel = ui.Panel({
           bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B10', 'B11', 'B12'];
           scale = 10;
           break;
-        case 'COPERNICUS/S2_CLOUD_PROBABILITY':
-          bandNames = ['probability'];
-          scale = 10;
-          break;
         case 'CLOUD_SCORE_PLUS_HARMONIZED/S2_HARMONIZED_V1':
+          // Cloud Score Plus波段
           bandNames = ['cs', 'cs_cdf'];
           scale = 10;
           break;
+        case 'LANDSAT/LT05/C02/T1_TOA':
+          // Landsat-5 TOA波段（B1-B7，不含热红外B6）
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B7'];
+          scale = 30;
+          break;
+        case 'LANDSAT/LE07/C02/T1_TOA':
+          // Landsat-7 TOA波段（B1-B7，不含全色B8）
+          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B7'];
+          scale = 30;
+          break;
         case 'LANDSAT/LC08/C02/T1_TOA':
-          // Landsat-8 TOA所有波段
+          // Landsat-8 TOA所有波段（包括热红外B10和B11）
           bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
           scale = 30;
           break;
         case 'LANDSAT/LC08/C02/T1':
-          // Landsat-8 Raw所有波段
-          bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
-          scale = 30;
-          break;
-        case 'LANDSAT/LC09/C02/T1_TOA':
-          // Landsat-9 TOA所有波段
+          // Landsat-8 原始数据所有波段
           bandNames = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'];
           scale = 30;
           break;
@@ -675,15 +797,22 @@ var mainPanel = ui.Panel({
         return processedImage.clip(region);
       }
     
-      // 数据筛选 - 添加云量过滤（仅对哨兵影像）
+      // 数据筛选 - 添加云量过滤（哨兵和Landsat影像）
       var data;
       var imageType = String(selectedImage);
       if (region) {
         if (imageType.indexOf('COPERNICUS/S2') !== -1) {
-          // 哨兵影像添加云量过滤
+          // 哨兵影像添加云量过滤（使用CLOUDY_PIXEL_PERCENTAGE属性）
           data = imageCollection.filterDate(start, end)
             .filterBounds(region)
             .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+            .map(preprocessImage)
+            .median();
+        } else if (imageType.indexOf('LANDSAT') !== -1) {
+          // Landsat影像添加云量过滤（使用CLOUD_COVER属性）
+          data = imageCollection.filterDate(start, end)
+            .filterBounds(region)
+            .filter(ee.Filter.lt('CLOUD_COVER', 20))
             .map(preprocessImage)
             .median();
         } else {
@@ -699,6 +828,11 @@ var mainPanel = ui.Panel({
             .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
             .map(preprocessImage)
             .median();
+        } else if (imageType.indexOf('LANDSAT') !== -1) {
+          data = imageCollection.filterDate(start, end)
+            .filter(ee.Filter.lt('CLOUD_COVER', 20))
+            .map(preprocessImage)
+            .median();
         } else {
           data = imageCollection.filterDate(start, end)
             .map(preprocessImage)
@@ -709,25 +843,32 @@ var mainPanel = ui.Panel({
       // 显示参数 - 根据影像类型设置不同的显示参数
       var visualization;
       if (imageType.indexOf('COPERNICUS/S2') !== -1) {
-        // 哨兵影像使用RGB显示
+        // 哨兵影像使用RGB显示（B4、B3、B2）
         visualization = {
           min: 0,
           max: 3000,
-          bands: ['B4', 'B3', 'B2'] // RGB波段
+          bands: ['B4', 'B3', 'B2']
         };
-      } else if (imageType.indexOf('LANDSAT') !== -1) {
-        // Landsat影像使用RGB显示
+      } else if (imageType.indexOf('LANDSAT/LT05') !== -1 || imageType.indexOf('LANDSAT/LE07') !== -1) {
+        // Landsat-5和Landsat-7使用B3、B2、B1作为RGB波段
         visualization = {
           min: 0,
-          max: 0.3,
-          bands: ['B4', 'B3', 'B2'] // RGB波段
+          max: 0.4,
+          bands: ['B3', 'B2', 'B1']
+        };
+      } else if (imageType.indexOf('LANDSAT/LC08') !== -1) {
+        // Landsat-8使用B4、B3、B2作为RGB波段
+        visualization = {
+          min: 0,
+          max: 0.4,
+          bands: ['B4', 'B3', 'B2']
         };
       } else {
         // 其他影像类型使用前三个波段
         visualization = {
           min: 0,
-          max: 0.3,
-          bands: bandNames.slice(0, 3)
+          max: 1,
+          bands: bandNames ? bandNames.slice(0, 3) : null
         };
       }
     
