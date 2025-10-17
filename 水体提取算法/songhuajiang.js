@@ -30,23 +30,23 @@ Map.centerObject(songhuajiang_region, 7);
 // 设置裁剪区域变量，用于后续数据处理
 var new_clip_region = songhuajiang_region;
 
-// 2. 获取 Sentinel-2 数据
-var startDate_2024 = '2025-06-01';
-var endDate_2024 = '2025-07-31';
+// 2. 设置时间参数（用户可根据需要修改）
+var startDate = '2025-06-01';
+var endDate = '2025-07-31';
 
-// 获取 Sentinel-2 数据，只筛选云量少的影像
-var S2_2024 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+// 3. 获取 Sentinel-2 数据，只筛选云量少的影像
+var S2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
   .filterBounds(new_clip_region)
-  .filterDate(startDate_2024, endDate_2024)
+  .filterDate(startDate, endDate)
   .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20));
 
-// 3. 计算影像中值合成，保留原始数据
+// 4. 计算影像中值合成，保留原始数据
 // 使用 median() 对时间序列影像取中值，减少云影响
 // clip() 将影像裁剪到松花江流域研究区域边界
-var composite_2024 = S2_2024.median().clip(songhuajiang_region);
+var composite = S2.median().clip(songhuajiang_region);
 
-// 4. 可视化合成影像
-Map.addLayer(composite_2024, {min: 0, max: 3000, bands: ['B4', 'B3', 'B2']}, 'Sentinel-2 Composite 2024');
+// 5. 可视化合成影像
+Map.addLayer(composite, {min: 0, max: 3000, bands: ['B4', 'B3', 'B2']}, 'Sentinel-2 合成影像');
 
 /**
  * 简化的阈值确定函数
@@ -170,7 +170,7 @@ function createWaterMask(image, region) {
 print('开始计算NDVI和NDWI指数...');
 
 // 验证输入影像
-var validatedComposite = validateImageBands(composite_2024);
+var validatedComposite = validateImageBands(composite);
 if (!validatedComposite) {
   print('错误：输入影像验证失败，无法继续处理');
 } else {
@@ -224,110 +224,62 @@ if (!validatedComposite) {
     print('\n=== 准备导出任务 ===');
     
     // 9.1 导出水体掩膜（最重要的结果）
-    // 将布尔值转换为整数（0和1），方便后续分析
-    var waterMaskExport = waterMask.byte();
+    // 只导出水体区域（值=1），非水体区域设为NoData
+    var waterMaskExport = waterMask.byte().selfMask();
     
     Export.image.toDrive({
       image: waterMaskExport,
-      description: 'WaterMask_' + startDate_2024 + '_' + endDate_2024,  // 任务名称
+      description: 'Songhuajiang_WaterMask_' + startDate + '_' + endDate,  // 任务名称
       folder: 'GEE_WaterExtraction',                 // Google Drive文件夹名
-      fileNamePrefix: 'Songhuajiang_WaterMask_' + startDate_2024 + '_' + endDate_2024,  // 文件名
+      fileNamePrefix: 'Songhuajiang_WaterMask_' + startDate + '_' + endDate,  // 文件名
       region: new_clip_region,                       // 导出区域
       scale: 10,                                     // 分辨率10米（统一到最高分辨率）
       maxPixels: 1e13,                               // 最大像素数
       crs: 'EPSG:4326',                              // 坐标系
-      fileFormat: 'GeoTIFF'                          // 文件格式
+      fileFormat: 'GeoTIFF',                         // 文件格式
+      skipEmptyTiles: true,                          // 跳过完全为空的瓦片，减小文件大小
+      formatOptions: {
+        cloudOptimized: true  // 生成云优化的GeoTIFF，支持大文件
+      }
     });
     
     print('✓ 水体掩膜导出任务已创建');
     
-    // 9.2 导出NDWI指数影像（用于验证和进一步分析）
-    var ndwiExport = waterFeatures.select('NDWI').toFloat();
+    // 9.2 导出RGBN合成影像（RGB + 近红外波段）
+    // B4-红波段、B3-绿波段、B2-蓝波段、B8-近红外波段
+    // 创建有效数据掩膜，只导出有像素值的区域
+    var rgbnComposite = composite.select(['B4', 'B3', 'B2', 'B8']).toUint16();
+    var validMask = rgbnComposite.mask().reduce(ee.Reducer.min());  // 所有波段都有效的像素
+    var rgbnMasked = rgbnComposite.updateMask(validMask);
     
     Export.image.toDrive({
-      image: ndwiExport,
-      description: 'NDWI_Index_' + startDate_2024 + '_' + endDate_2024,
+      image: rgbnMasked,
+      description: 'Songhuajiang_RGBN_Composite_' + startDate + '_' + endDate,
       folder: 'GEE_WaterExtraction',
-      fileNamePrefix: 'Songhuajiang_NDWI_' + startDate_2024 + '_' + endDate_2024,
-      region: new_clip_region,
-      scale: 10,  // 分辨率10米（统一到最高分辨率）
-      maxPixels: 1e13,
-      crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
-    });
-    
-    print('✓ NDWI指数导出任务已创建');
-    
-    // 9.3 导出完整光谱波段的原始合成影像（仅光谱波段B1-B12）
-    /**
-     * 导出完整的Sentinel-2光谱波段
-     * 仅包含光谱波段：B1, B2, B3, B4, B5, B6, B7, B8, B8A, B9, B11, B12
-     * 不包含辅助波段（AOT, WVP, SCL, TCI等）
-     * 分辨率：10米（统一重采样到最高分辨率）
-     */
-    var spectralBands = composite_2024.select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12']);
-    
-    Export.image.toDrive({
-      image: spectralBands,
-      description: 'AllBands_' + startDate_2024 + '_' + endDate_2024,
-      folder: 'GEE_WaterExtraction',
-      fileNamePrefix: 'Songhuajiang_AllBands_' + startDate_2024 + '_' + endDate_2024,
-      region: new_clip_region,
-      scale: 10,  // 使用10米分辨率，与Sentinel-2最高分辨率一致
-      maxPixels: 1e13,
-      crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
-    });
-    
-    print('✓ 完整光谱波段合成影像导出任务已创建（B1-B12，共12个波段）');
-    
-    // 9.4 导出RGB真彩色合成影像（作为快速查看的参考底图）
-    var rgbComposite = composite_2024.select(['B4', 'B3', 'B2']).toUint16();
-    
-    Export.image.toDrive({
-      image: rgbComposite,
-      description: 'RGB_Composite_' + startDate_2024 + '_' + endDate_2024,
-      folder: 'GEE_WaterExtraction',
-      fileNamePrefix: 'Songhuajiang_RGB_' + startDate_2024 + '_' + endDate_2024,
+      fileNamePrefix: 'Songhuajiang_RGBN_' + startDate + '_' + endDate,
       region: new_clip_region,
       scale: 10,
       maxPixels: 1e13,
       crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
+      fileFormat: 'GeoTIFF',
+      skipEmptyTiles: true,  // 跳过完全为空的瓦片，减小文件大小
+      formatOptions: {
+        cloudOptimized: true  // 生成云优化的GeoTIFF，支持大文件
+      }
     });
     
-    print('✓ RGB合成影像导出任务已创建');
-    
-    // 9.5 导出NDVI指数影像（用于植被分析和验证排除效果）
-    var ndviExport = waterFeatures.select('NDVI').toFloat();
-    
-    Export.image.toDrive({
-      image: ndviExport,
-      description: 'NDVI_Index_' + startDate_2024 + '_' + endDate_2024,
-      folder: 'GEE_WaterExtraction',
-      fileNamePrefix: 'Songhuajiang_NDVI_' + startDate_2024 + '_' + endDate_2024,
-      region: new_clip_region,
-      scale: 10,
-      maxPixels: 1e13,
-      crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
-    });
-    
-    print('✓ NDVI指数导出任务已创建');
+    print('✓ RGBN合成影像导出任务已创建（RGB+近红外，共4个波段）');
     
     // 导出任务说明
     print('\n=== 导出任务使用说明 ===');
     print('1. 在GEE Code Editor右侧找到【Tasks】标签');
-    print('2. 点击每个导出任务旁边的【RUN】按钮（共5个任务）');
+    print('2. 点击每个导出任务旁边的【RUN】按钮（共2个任务）');
     print('3. 在弹出窗口中确认参数，点击【RUN】开始导出');
     print('4. 导出完成后，文件会出现在Google Drive的"GEE_WaterExtraction"文件夹中');
     print('5. 导出的文件格式为GeoTIFF，可用QGIS、ArcGIS等软件打开');
     print('\n导出文件说明：');
     print('- WaterMask: 水体掩膜（0=非水体，1=水体）');
-    print('- NDWI: 归一化水体指数（-1到1，值越高越可能是水体）');
-    print('- AllBands: 完整光谱波段合成影像（B1-B12共12个波段，不含辅助波段）');
-    print('- RGB: 原始卫星影像真彩色合成（用于快速查看和对比参考）');
-    print('- NDVI: 归一化植被指数（-1到1，用于植被分析和验证排除效果）');
+    print('- RGBN: RGB+近红外合成影像（B4红、B3绿、B2蓝、B8近红外，共4个波段）');
     print('\n坐标系: 所有文件均使用EPSG:4326 (WGS84地理坐标系)');
     print('分辨率: 10米（统一重采样到Sentinel-2最高分辨率）');
     print('松花江流域研究区域的所有结果将导出完成！');

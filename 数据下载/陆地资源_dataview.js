@@ -100,32 +100,32 @@ var L5_2025 = L5.filterBounds(new_clip_region)
 // 5. 计算影像中值合成（只保留光谱波段，排除辅助波段）
 /**
  * Landsat中值合成说明：
- * - Landsat 8/9 TOA包含光谱波段：B1-B11（包括热红外B10和B11）
- * - Landsat 5/7 TOA包含光谱波段：B1-B7（不含B8的全色波段）
+ * - Landsat 8/9 TOA包含光谱波段：B2-B11（包括热红外B10和B11）
+ * - Landsat 5/7 TOA包含光谱波段：B2-B7（不含B8的全色波段）
  * - 只选择光谱波段，排除QA_PIXEL、QA_RADSAT等辅助波段
  * - 可用于多种指数计算：NDVI, NDWI, SAVI等
  */
 var L9_composite = L9_2025.median()
-  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'])
+  .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'])
   .clip(TARGET_REGION);
 var L8_composite = L8_2025.median()
-  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'])
+  .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11'])
   .clip(TARGET_REGION);
 var L7_composite = L7_2025.median()
-  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
+  .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
   .clip(TARGET_REGION);
 var L5_composite = L5_2025.median()
-  .select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
+  .select(['B2', 'B3', 'B4', 'B5', 'B6', 'B7'])
   .clip(TARGET_REGION);
 
-// 6. 可视化参数
+// 6. 可视化参数（统一使用RGB真彩色波段）
 var trueColor432Vis_L8 = {
-  bands:['B4','B3','B2'],
+  bands:['B4','B3','B2'],  // Landsat 8/9: 红、绿、蓝波段
   min: 0.0,
   max: 0.4,
 };
 var trueColor432Vis_L457 = {
-  bands:['B3','B2','B1'],
+  bands:['B3','B2','B1'],  // Landsat 5/7: 红、绿、蓝波段
   min: 0.0,
   max: 0.4,
 };
@@ -147,34 +147,7 @@ if (L5_2025.size().getInfo() > 0) {
   print('Landsat-5在指定时间范围内没有可用数据，跳过RGB显示');
 }
 
-// 8. 计算并显示NDVI
-var ndvi_L9 = L9_composite.normalizedDifference(['B5', 'B4']);
-var ndvi_L8 = L8_composite.normalizedDifference(['B5', 'B4']);
-
-Map.addLayer(ndvi_L9, {min: -1, max: 1, palette: ['red', 'yellow', 'green']}, 'L9 NDVI (Cloud Removed)');
-Map.addLayer(ndvi_L8, {min: -1, max: 1, palette: ['red', 'yellow', 'green']}, 'L8 NDVI (Cloud Removed)');
-
-// 检查Landsat-7和Landsat-5是否有数据，然后计算和显示NDVI
-var L7_count = L7_2025.size().getInfo();
-var L5_count = L5_2025.size().getInfo();
-
-if (L7_count > 0) {
-  var ndvi_L7 = L7_composite.normalizedDifference(['B4', 'B3']);
-  Map.addLayer(ndvi_L7, {min: -1, max: 1, palette: ['red', 'yellow', 'green']}, 'L7 NDVI (Cloud Removed)');
-  print('Landsat-7 NDVI已显示');
-} else {
-  print('Landsat-7在指定时间范围内没有可用数据');
-}
-
-if (L5_count > 0) {
-  var ndvi_L5 = L5_composite.normalizedDifference(['B4', 'B3']);
-  Map.addLayer(ndvi_L5, {min: -1, max: 1, palette: ['red', 'yellow', 'green']}, 'L5 NDVI (Cloud Removed)');
-  print('Landsat-5 NDVI已显示');
-} else {
-  print('Landsat-5在指定时间范围内没有可用数据');
-}
-
-// 9. 显示影像统计信息
+// 8. 显示影像统计信息
 print('Landsat-9影像数量:', L9_2025.size());
 print('Landsat-8影像数量:', L8_2025.size());
 print('Landsat-7影像数量:', L7_2025.size());

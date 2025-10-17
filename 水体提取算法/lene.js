@@ -225,104 +225,63 @@ function runWaterExtraction() {
     var filePrefix = 'Lene_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, '');
     
     // 9.1 导出水体掩膜
-    var waterMaskExport = waterMask.byte();
+    // 只导出水体区域（值=1），非水体区域设为NoData
+    var waterMaskExport = waterMask.byte().selfMask();
     
     Export.image.toDrive({
       image: waterMaskExport,
-      description: 'WaterMask_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
+      description: 'Lene_WaterMask_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
       folder: 'GEE_WaterExtraction',
       fileNamePrefix: filePrefix + '_WaterMask',
       region: studyRegion,
       scale: 10,
       maxPixels: 1e13,
       crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
+      fileFormat: 'GeoTIFF',
+      skipEmptyTiles: true,  // 跳过完全为空的瓦片，减小文件大小
+      formatOptions: {
+        cloudOptimized: true  // 生成云优化的GeoTIFF，支持大文件
+      }
     });
     
     print('✓ 水体掩膜导出任务已创建');
     
-    // 9.2 导出NDWI指数影像
-    var ndwiExport = waterFeatures.select('NDWI').toFloat();
+    // 9.2 导出RGBN合成影像（RGB + 近红外波段）
+    // B4-红波段、B3-绿波段、B2-蓝波段、B8-近红外波段
+    // 创建有效数据掩膜，只导出有像素值的区域
+    var rgbnComposite = composite.select(['B4', 'B3', 'B2', 'B8']).toUint16();
+    var validMask = rgbnComposite.mask().reduce(ee.Reducer.min());  // 所有波段都有效的像素
+    var rgbnMasked = rgbnComposite.updateMask(validMask);
     
     Export.image.toDrive({
-      image: ndwiExport,
-      description: 'NDWI_Index_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
+      image: rgbnMasked,
+      description: 'Lene_RGBN_Composite_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
       folder: 'GEE_WaterExtraction',
-      fileNamePrefix: filePrefix + '_NDWI',
+      fileNamePrefix: filePrefix + '_RGBN',
       region: studyRegion,
       scale: 10,
       maxPixels: 1e13,
       crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
+      fileFormat: 'GeoTIFF',
+      skipEmptyTiles: true,  // 跳过完全为空的瓦片，减小文件大小
+      formatOptions: {
+        cloudOptimized: true  // 生成云优化的GeoTIFF，支持大文件
+      }
     });
     
-    print('✓ NDWI指数导出任务已创建');
-    
-    // 9.3 导出完整光谱波段（B1-B12）
-    var spectralBands = composite.select(['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12']);
-    
-    Export.image.toDrive({
-      image: spectralBands,
-      description: 'AllBands_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
-      folder: 'GEE_WaterExtraction',
-      fileNamePrefix: filePrefix + '_AllBands',
-      region: studyRegion,
-      scale: 10,
-      maxPixels: 1e13,
-      crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
-    });
-    
-    print('✓ 完整光谱波段合成影像导出任务已创建（B1-B12，共12个波段）');
-    
-    // 9.4 导出RGB真彩色合成影像
-    var rgbComposite = composite.select(['B4', 'B3', 'B2']).toUint16();
-    
-    Export.image.toDrive({
-      image: rgbComposite,
-      description: 'RGB_Composite_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
-      folder: 'GEE_WaterExtraction',
-      fileNamePrefix: filePrefix + '_RGB',
-      region: studyRegion,
-      scale: 10,
-      maxPixels: 1e13,
-      crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
-    });
-    
-    print('✓ RGB合成影像导出任务已创建');
-    
-    // 9.5 导出NDVI指数影像
-    var ndviExport = waterFeatures.select('NDVI').toFloat();
-    
-    Export.image.toDrive({
-      image: ndviExport,
-      description: 'NDVI_Index_' + startDate.replace(/-/g, '') + '_' + endDate.replace(/-/g, ''),
-      folder: 'GEE_WaterExtraction',
-      fileNamePrefix: filePrefix + '_NDVI',
-      region: studyRegion,
-      scale: 10,
-      maxPixels: 1e13,
-      crs: 'EPSG:4326',
-      fileFormat: 'GeoTIFF'
-    });
-    
-    print('✓ NDVI指数导出任务已创建');
+    print('✓ RGBN合成影像导出任务已创建（RGB+近红外，共4个波段）');
     
     // 导出任务说明
     print('\n=== 导出任务使用说明 ===');
     print('研究区域: Lene河 (122.788°E-130.055°E, 72.017°N-74.152°N)');
     print('1. 在GEE Code Editor右侧找到【Tasks】标签');
-    print('2. 点击每个导出任务旁边的【RUN】按钮（共5个任务）');
+    print('2. 点击每个导出任务旁边的【RUN】按钮（共2个任务）');
     print('3. 在弹出窗口中确认参数，点击【RUN】开始导出');
     print('4. 导出完成后，文件会出现在Google Drive的"GEE_WaterExtraction"文件夹中');
     print('5. 导出的文件格式为GeoTIFF，可用QGIS、ArcGIS等软件打开');
     print('\n导出文件说明：');
     print('- WaterMask: 水体掩膜（0=非水体，1=水体）');
-    print('- NDWI: 归一化水体指数（-1到1，值越高越可能是水体）');
-    print('- AllBands: 完整光谱波段合成影像（B1-B12共12个波段，不含辅助波段）');
-    print('- RGB: 原始卫星影像真彩色合成（用于快速查看和对比参考）');
-    print('- NDVI: 归一化植被指数（-1到1，用于植被分析和验证排除效果）');
+    print('- RGBN: RGB+近红外合成影像（B4红、B3绿、B2蓝、B8近红外，共4个波段）');
     print('\n坐标系: 所有文件均使用EPSG:4326 (WGS84地理坐标系)');
     print('分辨率: 10米（统一重采样到Sentinel-2最高分辨率）');
     print('文件名前缀: Lene_[开始日期]_[结束日期]');
