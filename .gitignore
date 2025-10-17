@@ -4,7 +4,7 @@
 *.tiff
 *.TIF
 *.TIFF
-
+*.zip
 # GeoTIFF辅助文件
 *.tif.aux.xml
 *.tiff.aux.xml
