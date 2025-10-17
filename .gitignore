@@ -1,0 +1,52 @@
+# ==================== 遥感影像文件 ====================
+# GeoTIFF影像文件
+*.tif
+*.tiff
+*.TIF
+*.TIFF
+
+# GeoTIFF辅助文件
+*.tif.aux.xml
+*.tiff.aux.xml
+*.tif.ovr
+*.tiff.ovr
+*.tif.enp
+*.tiff.enp
+
+栅格与表互相转换/原始数据
+栅格与表互相转换/处理结果
+
+
+# ==================== Python ====================
+# 字节码文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# ==================== IDE ====================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+
+# ==================== 系统文件 ====================
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# ==================== 输出目录（可选） ====================
+# 处理结果目录（根据需要取消注释）
+# 栅格与表互相转换/处理结果/
+# 栅格与表互相转换/原始数据/
