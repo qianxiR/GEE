@@ -19,7 +19,7 @@ from step1_tiff_to_csv_extractor import extract_bands_to_csv_with_mask, CLIPPED_
 
 # ==================== 全局配置参数 ====================
 # 路径配置
-INPUT_DIR_NAME = "栅格与表互相转换/原始数据"          # 输入目录名
+INPUT_DIR_NAME = "栅格与表互相转换/处理结果"          # 输入目录名
 INPUT_FILE_NAME = "image_cliped_resized_500x500.tif"               # 输入文件名
 MASK_FILE_NAME = "yanmo_cliped_resized_500x500.tif"                # 掩膜文件名（二值掩膜：1=水体，0=非水体）
 OUTPUT_DIR_NAME = "栅格与表互相转换/处理结果"        # 输出目录名
